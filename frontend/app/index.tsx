@@ -324,9 +324,7 @@ export default function RamadanScreen() {
   const countdown = getCountdown(fastingInfo.countdownTarget, displayNow);
   const liveSunPos = getSunPosition(displayNow, timetable, prayerTimesOverride);
   const sunPos = isSimulating ? simulationProgress : liveSunPos;
-  const targetPrayerTime = isSimulating
-    ? formatTime12(displayNow)
-    : formatTime12(fastingInfo.countdownTarget);
+  const currentDisplayTime = formatTime12(displayNow);
   const islamicDate = getIslamicDate();
   const isDaytimeNow = timePeriod === 'morning' || timePeriod === 'day' || timePeriod === 'dawn';
   const isSunset = timePeriod === 'sunset';
@@ -469,8 +467,8 @@ export default function RamadanScreen() {
         </View>
       </View>
 
-      {/* Target prayer time (e.g. Fajr / Iftar) */}
-      <Text style={[styles.currentTime, { color: textColor }]}>{targetPrayerTime}</Text>
+      {/* Live current time */}
+      <Text style={[styles.currentTime, { color: textColor }]}>{currentDisplayTime}</Text>
 
       {/* Countdown */}
       <View style={styles.countdownSection}>
