@@ -19,7 +19,6 @@ import {
   getIslamicDate,
   getPrayerTimes,
   getSunPosition,
-  getTimePeriod,
   type TimePeriod,
 } from '@/lib/prayer-times';
 import {
@@ -49,15 +48,205 @@ function getDateKeyInTimezone(date: Date = new Date(), timeZone: string = APP_TI
   return `${year}-${month}-${day}`;
 }
 
-// Background gradients for different times of day
-const GRADIENTS: Record<TimePeriod, string[]> = {
-  'night-early': ['#0a0a2e', '#1a1045', '#2d1b69', '#1a1045'],
-  dawn: ['#1a1045', '#2d1b69', '#4a2c8a', '#6b3fa0'],
-  morning: ['#4a90d9', '#6bb3f0', '#87ceeb', '#b0d4f1'],
-  day: ['#3a7bd5', '#5b9ce0', '#87ceeb', '#a8d8ea'],
-  sunset: ['#1a1045', '#6b3fa0', '#d4618c', '#f4a460', '#ffd700'],
-  night: ['#0a0a2e', '#1a1045', '#2d1b69', '#1a1045'],
+const SKY_PALETTES: Record<
+  TimePeriod,
+  {
+    gradient: string[];
+    textColor: string;
+    subtextColor: string;
+    cardBg: string;
+    cardBorder: string;
+    starsOpacity: number;
+    hazeOpacity: number;
+    hazeColor: string;
+  }
+> = {
+  'night-early': {
+    gradient: ['#040A1F', '#0A1B4A', '#121E5B', '#1E1E58'],
+    textColor: '#FFFFFF',
+    subtextColor: 'rgba(230,241,255,0.72)',
+    cardBg: 'rgba(255,255,255,0.08)',
+    cardBorder: 'rgba(255,255,255,0.16)',
+    starsOpacity: 1,
+    hazeOpacity: 0.1,
+    hazeColor: '#6F8DFF',
+  },
+  dawn: {
+    gradient: ['#23193F', '#533C82', '#855AA8', '#C5799A'],
+    textColor: '#FFFFFF',
+    subtextColor: 'rgba(245,236,255,0.78)',
+    cardBg: 'rgba(255,255,255,0.12)',
+    cardBorder: 'rgba(255,255,255,0.2)',
+    starsOpacity: 0.35,
+    hazeOpacity: 0.2,
+    hazeColor: '#FFB67A',
+  },
+  morning: {
+    gradient: ['#6692D6', '#7EA9E3', '#A7C2EF', '#CADAFB'],
+    textColor: '#F9FCFF',
+    subtextColor: 'rgba(235,246,255,0.82)',
+    cardBg: 'rgba(255,255,255,0.2)',
+    cardBorder: 'rgba(255,255,255,0.34)',
+    starsOpacity: 0.06,
+    hazeOpacity: 0.15,
+    hazeColor: '#FFF0B6',
+  },
+  day: {
+    gradient: ['#2F8BDF', '#52A8EB', '#75BDED', '#A5D9F5'],
+    textColor: '#FFFFFF',
+    subtextColor: 'rgba(233,247,255,0.85)',
+    cardBg: 'rgba(255,255,255,0.24)',
+    cardBorder: 'rgba(255,255,255,0.36)',
+    starsOpacity: 0,
+    hazeOpacity: 0.1,
+    hazeColor: '#FFF5C4',
+  },
+  sunset: {
+    gradient: ['#572C72', '#8E477F', '#B96882', '#CE8B66'],
+    textColor: '#FFFFFF',
+    subtextColor: 'rgba(255,235,236,0.78)',
+    cardBg: 'rgba(28,15,40,0.2)',
+    cardBorder: 'rgba(255,255,255,0.2)',
+    starsOpacity: 0.15,
+    hazeOpacity: 0.26,
+    hazeColor: '#FFA65C',
+  },
+  night: {
+    gradient: ['#130A2E', '#271154', '#352064', '#41276E'],
+    textColor: '#FFFFFF',
+    subtextColor: 'rgba(235,227,255,0.72)',
+    cardBg: 'rgba(255,255,255,0.08)',
+    cardBorder: 'rgba(255,255,255,0.16)',
+    starsOpacity: 0.9,
+    hazeOpacity: 0.14,
+    hazeColor: '#7A79FF',
+  },
 };
+
+type SkyTheme = {
+  period: TimePeriod;
+  gradient: string[];
+  textColor: string;
+  subtextColor: string;
+  cardBg: string;
+  cardBorder: string;
+  starsOpacity: number;
+  hazeOpacity: number;
+  hazeColor: string;
+};
+
+function getSkyTheme(now: Date, prayerTimes: ReturnType<typeof getPrayerTimes>): SkyTheme {
+  const t = now.getTime();
+  const fajr = prayerTimes.fajr.getTime();
+  const sunrise = prayerTimes.sunrise.getTime();
+  const dhuhr = prayerTimes.dhuhr.getTime();
+  const asr = prayerTimes.asr.getTime();
+  const maghrib = prayerTimes.maghrib.getTime();
+  const isha = prayerTimes.isha.getTime();
+
+  const dawnStart = fajr - 45 * 60_000;
+  const morningStart = sunrise;
+  const dayStart = dhuhr;
+  const sunsetStart = asr + 30 * 60_000;
+  const nightStart = isha;
+
+  if (t < dawnStart) return finalizeTheme('night-early', 0);
+  if (t < morningStart)
+    return finalizeTheme('dawn', transitionProgress(t, dawnStart, morningStart));
+  if (t < dayStart) return finalizeTheme('morning', transitionProgress(t, morningStart, dayStart));
+  if (t < sunsetStart) return finalizeTheme('day', transitionProgress(t, dayStart, sunsetStart));
+  if (t < nightStart)
+    return finalizeTheme('sunset', transitionProgress(t, sunsetStart, nightStart));
+  if (t < maghrib + 3 * 60 * 60_000) {
+    return finalizeTheme('night', transitionProgress(t, nightStart, maghrib + 3 * 60 * 60_000));
+  }
+  return finalizeTheme('night-early', 0);
+}
+
+function finalizeTheme(period: TimePeriod, drift: number): SkyTheme {
+  const base = SKY_PALETTES[period];
+  const nextPeriod =
+    period === 'night-early' ? 'dawn' : period === 'night' ? 'night-early' : nextPhase(period);
+  const next = SKY_PALETTES[nextPeriod];
+  const blend = Math.max(0, Math.min(0.35, drift * 0.22));
+
+  return {
+    period,
+    gradient: base.gradient.map((c, i) => blendHex(c, next.gradient[i], blend)),
+    textColor: blendHex(base.textColor, next.textColor, blend * 0.6),
+    subtextColor: blendRgba(base.subtextColor, next.subtextColor, blend * 0.5),
+    cardBg: blendRgba(base.cardBg, next.cardBg, blend * 0.6),
+    cardBorder: blendRgba(base.cardBorder, next.cardBorder, blend * 0.6),
+    starsOpacity: mixNumber(base.starsOpacity, next.starsOpacity, blend),
+    hazeOpacity: mixNumber(base.hazeOpacity, next.hazeOpacity, blend),
+    hazeColor: blendHex(base.hazeColor, next.hazeColor, blend),
+  };
+}
+
+function nextPhase(period: TimePeriod): TimePeriod {
+  if (period === 'dawn') return 'morning';
+  if (period === 'morning') return 'day';
+  if (period === 'day') return 'sunset';
+  if (period === 'sunset') return 'night';
+  return 'night';
+}
+
+function transitionProgress(nowMs: number, startMs: number, endMs: number): number {
+  if (endMs <= startMs) return 0;
+  return Math.max(0, Math.min(1, (nowMs - startMs) / (endMs - startMs)));
+}
+
+function mixNumber(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function blendHex(from: string, to: string, t: number): string {
+  const f = hexToRgb(from);
+  const s = hexToRgb(to);
+  const r = Math.round(mixNumber(f.r, s.r, t));
+  const g = Math.round(mixNumber(f.g, s.g, t));
+  const b = Math.round(mixNumber(f.b, s.b, t));
+  return `rgb(${r},${g},${b})`;
+}
+
+function blendRgba(from: string, to: string, t: number): string {
+  const a = rgbaToObj(from);
+  const b = rgbaToObj(to);
+  const r = Math.round(mixNumber(a.r, b.r, t));
+  const g = Math.round(mixNumber(a.g, b.g, t));
+  const bCh = Math.round(mixNumber(a.b, b.b, t));
+  const alpha = mixNumber(a.a, b.a, t);
+  return `rgba(${r},${g},${bCh},${alpha.toFixed(3)})`;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.replace('#', '');
+  const full =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : normalized;
+  const num = parseInt(full, 16);
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255,
+  };
+}
+
+function rgbaToObj(color: string): { r: number; g: number; b: number; a: number } {
+  const match = color.match(/rgba?\(([^)]+)\)/);
+  if (!match) return { r: 255, g: 255, b: 255, a: 1 };
+  const parts = match[1].split(',').map((p) => p.trim());
+  return {
+    r: parseFloat(parts[0] || '255'),
+    g: parseFloat(parts[1] || '255'),
+    b: parseFloat(parts[2] || '255'),
+    a: parseFloat(parts[3] || '1'),
+  };
+}
 
 export default function RamadanScreen() {
   const [now, setNow] = React.useState(new Date());
@@ -102,7 +291,7 @@ export default function RamadanScreen() {
         return;
       }
       try {
-        const data = await fetchDailyPrayerTimes(settings.lat, settings.lng, now);
+        const data = await fetchDailyPrayerTimes(settings.lat, settings.lng, new Date());
         if (active) setDailyTimes(data);
       } catch {
         if (active) setDailyTimes(null);
@@ -128,31 +317,24 @@ export default function RamadanScreen() {
 
   const timetable = settings?.timetable;
   const displayNow = isSimulating && simulationNow ? simulationNow : now;
-  const timePeriod = getTimePeriod(displayNow);
+  const prayerTimes = getPrayerTimes(displayNow, timetable, prayerTimesOverride);
+  const skyTheme = getSkyTheme(displayNow, prayerTimes);
+  const timePeriod = skyTheme.period;
   const fastingInfo = getFastingInfo(displayNow, timetable, prayerTimesOverride);
   const countdown = getCountdown(fastingInfo.countdownTarget, displayNow);
   const liveSunPos = getSunPosition(displayNow, timetable, prayerTimesOverride);
   const sunPos = isSimulating ? simulationProgress : liveSunPos;
-  const prayerTimes = getPrayerTimes(displayNow, timetable, prayerTimesOverride);
   const targetPrayerTime = isSimulating
     ? formatTime12(displayNow)
     : formatTime12(fastingInfo.countdownTarget);
   const islamicDate = getIslamicDate();
-  const isDaytimeNow = timePeriod === 'morning' || timePeriod === 'day';
+  const isDaytimeNow = timePeriod === 'morning' || timePeriod === 'day' || timePeriod === 'dawn';
   const isSunset = timePeriod === 'sunset';
 
-  const textColor = isDaytimeNow ? '#1a3a5c' : '#ffffff';
-  const subtextColor = isDaytimeNow ? '#4a6a8c' : 'rgba(255,255,255,0.7)';
-  const cardBg = isDaytimeNow
-    ? 'rgba(255,255,255,0.3)'
-    : isSunset
-      ? 'rgba(0,0,0,0.2)'
-      : 'rgba(255,255,255,0.08)';
-  const cardBorder = isDaytimeNow
-    ? 'rgba(255,255,255,0.5)'
-    : isSunset
-      ? 'rgba(255,255,255,0.15)'
-      : 'rgba(255,255,255,0.12)';
+  const textColor = skyTheme.textColor;
+  const subtextColor = skyTheme.subtextColor;
+  const cardBg = skyTheme.cardBg;
+  const cardBorder = skyTheme.cardBorder;
 
   const locationLabel = settings
     ? `${settings.districtBn} · ${settings.districtName}`
@@ -228,14 +410,26 @@ export default function RamadanScreen() {
     <View style={styles.container}>
       <StatusBar style="light" />
       <LinearGradient
-        colors={GRADIENTS[timePeriod] as any}
+        colors={skyTheme.gradient as any}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
       />
+      <LinearGradient
+        colors={[`rgba(255,255,255,${skyTheme.hazeOpacity * 0.08})`, 'rgba(255,255,255,0)']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 0.75 }}
+      />
+      <LinearGradient
+        colors={[`${skyTheme.hazeColor}33`, 'rgba(0,0,0,0)']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 1 }}
+        end={{ x: 0.5, y: 0.25 }}
+      />
 
       {/* Stars for night mode */}
-      {!isDaytimeNow && !isSunset && <StarsOverlay />}
+      <StarsOverlay opacity={skyTheme.starsOpacity} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -384,7 +578,7 @@ export default function RamadanScreen() {
 }
 
 // Stars overlay for nighttime
-function StarsOverlay() {
+function StarsOverlay({ opacity }: { opacity: number }) {
   const stars = React.useMemo(() => {
     const result = [];
     for (let i = 0; i < 50; i++) {
@@ -399,7 +593,7 @@ function StarsOverlay() {
   }, []);
 
   return (
-    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+    <Svg style={[StyleSheet.absoluteFill, { opacity }]} pointerEvents="none">
       {stars.map((star, i) => (
         <Circle key={i} cx={star.x} cy={star.y} r={star.size} fill="white" opacity={star.opacity} />
       ))}
