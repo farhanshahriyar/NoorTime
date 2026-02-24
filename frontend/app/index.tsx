@@ -331,8 +331,38 @@ export default function RamadanScreen() {
 
   const textColor = skyTheme.textColor;
   const subtextColor = skyTheme.subtextColor;
-  const cardBg = skyTheme.cardBg;
-  const cardBorder = skyTheme.cardBorder;
+  const glassCardBg = isDaytimeNow
+    ? 'rgba(9,20,49,0.62)'
+    : isSunset
+      ? 'rgba(12,10,34,0.66)'
+      : 'rgba(9,13,33,0.68)';
+  const glassCardBorder = 'rgba(255,255,255,0.13)';
+  const glassCardHighlight = 'rgba(255,255,255,0.06)';
+  const cardShadowStyle = isDaytimeNow
+    ? {
+        shadowColor: '#020A1A',
+        shadowOpacity: 0.16,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 4,
+      }
+    : isSunset
+      ? {
+          shadowColor: '#0F0618',
+          shadowOpacity: 0.18,
+          shadowRadius: 9,
+          shadowOffset: { width: 0, height: 3 },
+          elevation: 4,
+        }
+      : {
+          shadowColor: '#00040D',
+          shadowOpacity: 0.2,
+          shadowRadius: 9,
+          shadowOffset: { width: 0, height: 3 },
+          elevation: 4,
+        };
+  const markBtnBg = markedToday ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.035)';
+  const markBtnBorder = markedToday ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.11)';
 
   const locationLabel = settings
     ? `${settings.districtBn} · ${settings.districtName}`
@@ -496,7 +526,19 @@ export default function RamadanScreen() {
       {/* Info Cards */}
       <View style={styles.cardsContainer}>
         {/* Suhoor / Iftar Card */}
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+        <View
+          style={[
+            styles.card,
+            cardShadowStyle,
+            {
+              backgroundColor: glassCardBg,
+              borderColor: glassCardBorder,
+            },
+          ]}>
+          <View
+            pointerEvents="none"
+            style={[styles.cardHighlight, { borderColor: glassCardHighlight }]}
+          />
           <View style={styles.cardRow}>
             <View>
               <Text style={[styles.cardLabel, { color: subtextColor }]}>Sehri ends</Text>
@@ -520,7 +562,19 @@ export default function RamadanScreen() {
         </View>
 
         {/* Fasting Streak Card */}
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+        <View
+          style={[
+            styles.card,
+            cardShadowStyle,
+            {
+              backgroundColor: glassCardBg,
+              borderColor: glassCardBorder,
+            },
+          ]}>
+          <View
+            pointerEvents="none"
+            style={[styles.cardHighlight, { borderColor: glassCardHighlight }]}
+          />
           <View style={styles.cardRow}>
             <View>
               <Text style={[styles.cardLabel, { color: subtextColor }]}>Fasting Streak</Text>
@@ -533,7 +587,14 @@ export default function RamadanScreen() {
               </View>
             </View>
             <TouchableOpacity
-              style={[styles.markBtn, { borderColor: cardBorder, opacity: markedToday ? 0.6 : 1 }]}
+              style={[
+                styles.markBtn,
+                {
+                  borderColor: markBtnBorder,
+                  backgroundColor: markBtnBg,
+                  opacity: markedToday ? 0.66 : 1,
+                },
+              ]}
               onPress={handleMarkComplete}
               disabled={markedToday}>
               <Text style={[styles.markBtnIcon, { color: subtextColor }]}>
@@ -754,6 +815,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 18,
     paddingVertical: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cardHighlight: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    opacity: 0.5,
   },
   cardRow: {
     flexDirection: 'row',
