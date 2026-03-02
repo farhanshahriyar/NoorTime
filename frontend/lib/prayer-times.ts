@@ -192,23 +192,52 @@ export function isDaytime(now: Date = new Date(), override?: PrayerTimesOverride
   return now >= times.sunrise && now < times.maghrib;
 }
 
-// Get Islamic date string (simplified)
-export function getIslamicDate(): string {
-  return "29 Sha'ban 1447 AH";
+// Get Islamic date string (dynamic)
+export function getIslamicDate(date: Date = new Date()): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-u-ca-islamic-uma-nu-latn', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    return formatter.format(date) + ' AH';
+  } catch {
+    return "Sha'ban 1447 AH"; // Fallback
+  }
 }
 
 // Get time period for background gradient
 export type TimePeriod = 'night-early' | 'dawn' | 'morning' | 'day' | 'sunset' | 'night';
 
-export function getTimePeriod(now: Date = new Date()): TimePeriod {
-  const hour = now.getHours();
-  const min = now.getMinutes();
-  const totalMin = hour * 60 + min;
+export function getTimePeriod(now: Date, times: PrayerTimes): TimePeriod {
+  const nowMs = now.getTime();
+  const fajrMs = times.fajr.getTime();
+  const sunriseMs = times.sunrise.getTime();
+  const dhuhrMs = times.dhuhr.getTime();
+  const asrMs = times.asr.getTime();
+  const maghribMs = times.maghrib.getTime();
+  const ishaMs = times.isha.getTime();
 
-  if (totalMin < 300) return 'night-early'; // Before 5:00 AM
-  if (totalMin < 390) return 'dawn'; // 5:00 - 6:30 AM
-  if (totalMin < 600) return 'morning'; // 6:30 - 10:00 AM
-  if (totalMin < 1020) return 'day'; // 10:00 AM - 5:00 PM
-  if (totalMin < 1140) return 'sunset'; // 5:00 - 7:00 PM
-  return 'night'; // After 7:00 PM
+  // 1. Dawn (Fajr to Sunrise)
+  if (nowMs >= fajrMs && nowMs < sunriseMs) return 'dawn';
+
+  // 2. Morning (Sunrise to 10:30 AM approx if before Dhuhr)
+  const tenThirtyToday = new Date(now);
+  tenThirtyToday.setHours(10, 30, 0, 0);
+  if (nowMs >= sunriseMs && nowMs < tenThirtyToday.getTime() && nowMs < dhuhrMs) return 'morning';
+
+  // 3. Day (Morning to 2 hours before Sunset)
+  const twoHoursBeforeSunset = new Date(maghribMs - 120 * 60 * 1000);
+  if (nowMs >= sunriseMs && nowMs < twoHoursBeforeSunset.getTime()) return 'day';
+
+  // 4. Sunset (2 hours before Sunset to Maghrib)
+  if (nowMs >= twoHoursBeforeSunset.getTime() && nowMs < maghribMs) return 'sunset';
+
+  // 5. Night (Maghrib to Midnight)
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+  if (nowMs >= maghribMs && nowMs <= endOfDay.getTime()) return 'night';
+
+  // 6. Night Early (Midnight to Fajr)
+  return 'night-early';
 }

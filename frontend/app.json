@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "NoorTime",
-    "slug": "731a6a6e-0515-4e73-9ff4-34759ae51b33",
+    "slug": "noottime",
     "version": "0.0.9",
     "orientation": "portrait",
     "icon": "./assets/images/noortime-logo.png",
@@ -11,9 +11,11 @@
     "splash": {
       "image": "./assets/images/noortime-logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1f2f58"
+      "backgroundColor": "#050F2C"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.orchids.mobileappdevelopment",
@@ -23,10 +25,15 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/noortime-adaptive-foreground.png",
-        "backgroundColor": "#1f2f58"
+        "foregroundImage": "./assets/images/noortime-logo.png",
+        "backgroundColor": "#050F2C"
       },
       "package": "com.orchids.mobileappdevelopment"
     },
@@ -50,8 +57,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "c0955ddd-1e76-4ea5-bec2-8e030e659e65"
+        "projectId": "e9b7be4b-07ae-4d11-916c-80f08d8bc9b4"
       }
-    }
+    },
+    "owner": "farhanshahriyarabir23s-organization"
   }
 }

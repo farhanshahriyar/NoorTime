@@ -2,7 +2,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as React from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, StyleSheet, Text, TouchableOpacity, View, Modal, Pressable, Platform } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import Svg, {
   Circle,
   Path,
@@ -19,12 +25,16 @@ import {
   getIslamicDate,
   getPrayerTimes,
   getSunPosition,
+  getTimePeriod,
   type TimePeriod,
+  type PrayerTimes,
 } from '@/lib/prayer-times';
 import {
   loadFastingStreak,
   loadSettings,
   markFastingComplete,
+  saveDailyPrayerTimes as savePrayerCache,
+  loadDailyPrayerTimes as loadPrayerCache,
   type SavedSettings,
 } from '@/lib/storage';
 
@@ -135,116 +145,11 @@ type SkyTheme = {
   hazeColor: string;
 };
 
-function getSkyTheme(now: Date, prayerTimes: ReturnType<typeof getPrayerTimes>): SkyTheme {
-  const t = now.getTime();
-  const fajr = prayerTimes.fajr.getTime();
-  const sunrise = prayerTimes.sunrise.getTime();
-  const dhuhr = prayerTimes.dhuhr.getTime();
-  const asr = prayerTimes.asr.getTime();
-  const maghrib = prayerTimes.maghrib.getTime();
-  const isha = prayerTimes.isha.getTime();
-
-  const dawnStart = fajr - 45 * 60_000;
-  const morningStart = sunrise;
-  const dayStart = dhuhr;
-  const sunsetStart = asr + 30 * 60_000;
-  const nightStart = isha;
-
-  if (t < dawnStart) return finalizeTheme('night-early', 0);
-  if (t < morningStart)
-    return finalizeTheme('dawn', transitionProgress(t, dawnStart, morningStart));
-  if (t < dayStart) return finalizeTheme('morning', transitionProgress(t, morningStart, dayStart));
-  if (t < sunsetStart) return finalizeTheme('day', transitionProgress(t, dayStart, sunsetStart));
-  if (t < nightStart)
-    return finalizeTheme('sunset', transitionProgress(t, sunsetStart, nightStart));
-  if (t < maghrib + 3 * 60 * 60_000) {
-    return finalizeTheme('night', transitionProgress(t, nightStart, maghrib + 3 * 60 * 60_000));
-  }
-  return finalizeTheme('night-early', 0);
-}
-
-function finalizeTheme(period: TimePeriod, drift: number): SkyTheme {
-  const base = SKY_PALETTES[period];
-  const nextPeriod =
-    period === 'night-early' ? 'dawn' : period === 'night' ? 'night-early' : nextPhase(period);
-  const next = SKY_PALETTES[nextPeriod];
-  const blend = Math.max(0, Math.min(0.35, drift * 0.22));
-
+function getSkyTheme(now: Date, prayerTimes: PrayerTimes): SkyTheme {
+  const period = getTimePeriod(now, prayerTimes);
   return {
+    ...SKY_PALETTES[period],
     period,
-    gradient: base.gradient.map((c, i) => blendHex(c, next.gradient[i], blend)),
-    textColor: blendHex(base.textColor, next.textColor, blend * 0.6),
-    subtextColor: blendRgba(base.subtextColor, next.subtextColor, blend * 0.5),
-    cardBg: blendRgba(base.cardBg, next.cardBg, blend * 0.6),
-    cardBorder: blendRgba(base.cardBorder, next.cardBorder, blend * 0.6),
-    starsOpacity: mixNumber(base.starsOpacity, next.starsOpacity, blend),
-    hazeOpacity: mixNumber(base.hazeOpacity, next.hazeOpacity, blend),
-    hazeColor: blendHex(base.hazeColor, next.hazeColor, blend),
-  };
-}
-
-function nextPhase(period: TimePeriod): TimePeriod {
-  if (period === 'dawn') return 'morning';
-  if (period === 'morning') return 'day';
-  if (period === 'day') return 'sunset';
-  if (period === 'sunset') return 'night';
-  return 'night';
-}
-
-function transitionProgress(nowMs: number, startMs: number, endMs: number): number {
-  if (endMs <= startMs) return 0;
-  return Math.max(0, Math.min(1, (nowMs - startMs) / (endMs - startMs)));
-}
-
-function mixNumber(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function blendHex(from: string, to: string, t: number): string {
-  const f = hexToRgb(from);
-  const s = hexToRgb(to);
-  const r = Math.round(mixNumber(f.r, s.r, t));
-  const g = Math.round(mixNumber(f.g, s.g, t));
-  const b = Math.round(mixNumber(f.b, s.b, t));
-  return `rgb(${r},${g},${b})`;
-}
-
-function blendRgba(from: string, to: string, t: number): string {
-  const a = rgbaToObj(from);
-  const b = rgbaToObj(to);
-  const r = Math.round(mixNumber(a.r, b.r, t));
-  const g = Math.round(mixNumber(a.g, b.g, t));
-  const bCh = Math.round(mixNumber(a.b, b.b, t));
-  const alpha = mixNumber(a.a, b.a, t);
-  return `rgba(${r},${g},${bCh},${alpha.toFixed(3)})`;
-}
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const normalized = hex.replace('#', '');
-  const full =
-    normalized.length === 3
-      ? normalized
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : normalized;
-  const num = parseInt(full, 16);
-  return {
-    r: (num >> 16) & 255,
-    g: (num >> 8) & 255,
-    b: num & 255,
-  };
-}
-
-function rgbaToObj(color: string): { r: number; g: number; b: number; a: number } {
-  const match = color.match(/rgba?\(([^)]+)\)/);
-  if (!match) return { r: 255, g: 255, b: 255, a: 1 };
-  const parts = match[1].split(',').map((p) => p.trim());
-  return {
-    r: parseFloat(parts[0] || '255'),
-    g: parseFloat(parts[1] || '255'),
-    b: parseFloat(parts[2] || '255'),
-    a: parseFloat(parts[3] || '1'),
   };
 }
 
@@ -263,6 +168,7 @@ export default function RamadanScreen() {
   } | null>(null);
   const [simulationProgress, setSimulationProgress] = React.useState(0);
   const simulationRafRef = React.useRef<number | null>(null);
+  const [showPrayerPanel, setShowPrayerPanel] = React.useState(false);
 
   // Reload settings every time the screen comes into focus (e.g. returning from settings)
   useFocusEffect(
@@ -283,6 +189,14 @@ export default function RamadanScreen() {
 
   const todayKey = getDateKeyInTimezone(now);
 
+  // Reset markedToday when the date changes (e.g. midnight crossover)
+  React.useEffect(() => {
+    loadFastingStreak().then((s) => {
+      setStreakCount(s.count);
+      setMarkedToday(s.lastCompletedDate === todayKey);
+    });
+  }, [todayKey]);
+
   React.useEffect(() => {
     let active = true;
     async function loadDailyTimes() {
@@ -291,10 +205,45 @@ export default function RamadanScreen() {
         return;
       }
       try {
+        // Try live fetch first
         const data = await fetchDailyPrayerTimes(settings.lat, settings.lng, new Date());
-        if (active) setDailyTimes(data);
+        if (active) {
+          setDailyTimes(data);
+          // Save to cache for offline fallback
+          const todayStr = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Dhaka',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date());
+          savePrayerCache({
+            date: todayStr,
+            lat: settings.lat,
+            lng: settings.lng,
+            ...data,
+          }).catch(() => { }); // fire-and-forget
+        }
       } catch {
-        if (active) setDailyTimes(null);
+        // Fallback to cached prayer times
+        if (active) {
+          try {
+            const cached = await loadPrayerCache();
+            if (cached) {
+              setDailyTimes({
+                fajr: cached.fajr,
+                sunrise: cached.sunrise,
+                dhuhr: cached.dhuhr,
+                asr: cached.asr,
+                maghrib: cached.maghrib,
+                isha: cached.isha,
+              });
+            } else {
+              setDailyTimes(null);
+            }
+          } catch {
+            setDailyTimes(null);
+          }
+        }
       }
     }
     loadDailyTimes();
@@ -325,7 +274,7 @@ export default function RamadanScreen() {
   const liveSunPos = getSunPosition(displayNow, timetable, prayerTimesOverride);
   const sunPos = isSimulating ? simulationProgress : liveSunPos;
   const currentDisplayTime = formatTime12(displayNow);
-  const islamicDate = getIslamicDate();
+  const islamicDate = getIslamicDate(displayNow);
   const isDaytimeNow = timePeriod === 'morning' || timePeriod === 'day' || timePeriod === 'dawn';
   const isSunset = timePeriod === 'sunset';
 
@@ -340,27 +289,27 @@ export default function RamadanScreen() {
   const glassCardHighlight = 'rgba(255,255,255,0.06)';
   const cardShadowStyle = isDaytimeNow
     ? {
-        shadowColor: '#020A1A',
-        shadowOpacity: 0.16,
-        shadowRadius: 8,
+      shadowColor: '#020A1A',
+      shadowOpacity: 0.16,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      elevation: 4,
+    }
+    : isSunset
+      ? {
+        shadowColor: '#0F0618',
+        shadowOpacity: 0.18,
+        shadowRadius: 9,
         shadowOffset: { width: 0, height: 3 },
         elevation: 4,
       }
-    : isSunset
-      ? {
-          shadowColor: '#0F0618',
-          shadowOpacity: 0.18,
-          shadowRadius: 9,
-          shadowOffset: { width: 0, height: 3 },
-          elevation: 4,
-        }
       : {
-          shadowColor: '#00040D',
-          shadowOpacity: 0.2,
-          shadowRadius: 9,
-          shadowOffset: { width: 0, height: 3 },
-          elevation: 4,
-        };
+        shadowColor: '#00040D',
+        shadowOpacity: 0.2,
+        shadowRadius: 9,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 4,
+      };
   const markBtnBg = markedToday ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.035)';
   const markBtnBorder = markedToday ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.11)';
 
@@ -369,9 +318,13 @@ export default function RamadanScreen() {
     : 'Set your location';
 
   async function handleMarkComplete() {
-    const result = await markFastingComplete(new Date());
-    setStreakCount(result.count);
-    setMarkedToday(result.lastCompletedDate === getDateKeyInTimezone(new Date()));
+    try {
+      const result = await markFastingComplete(now);
+      setStreakCount(result.count);
+      setMarkedToday(result.lastCompletedDate === todayKey);
+    } catch {
+      Alert.alert('Error', 'Failed to save fasting completion. Please try again.');
+    }
   }
 
   function handleStartSimulation() {
@@ -507,17 +460,17 @@ export default function RamadanScreen() {
         </Text>
         <View style={styles.countdownRow}>
           <View style={styles.countdownUnit}>
-            <Text style={[styles.countdownNumber, { color: textColor }]}>{countdown.h}</Text>
+            <RollingText value={countdown.h} style={[styles.countdownNumber, { color: textColor }]} />
             <Text style={[styles.countdownUnitLabel, { color: subtextColor }]}>H</Text>
           </View>
           <Text style={[styles.countdownSeparator, { color: textColor }]}>:</Text>
           <View style={styles.countdownUnit}>
-            <Text style={[styles.countdownNumber, { color: textColor }]}>{countdown.m}</Text>
+            <RollingText value={countdown.m} style={[styles.countdownNumber, { color: textColor }]} />
             <Text style={[styles.countdownUnitLabel, { color: subtextColor }]}>M</Text>
           </View>
           <Text style={[styles.countdownSeparator, { color: textColor }]}>:</Text>
           <View style={styles.countdownUnit}>
-            <Text style={[styles.countdownNumber, { color: textColor }]}>{countdown.s}</Text>
+            <RollingText value={countdown.s} style={[styles.countdownNumber, { color: textColor }]} />
             <Text style={[styles.countdownUnitLabel, { color: subtextColor }]}>S</Text>
           </View>
         </View>
@@ -608,19 +561,90 @@ export default function RamadanScreen() {
         </View>
       </View>
 
+      {/* Prayer Times Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showPrayerPanel}
+        onRequestClose={() => setShowPrayerPanel(false)}
+      >
+        <Pressable
+          className="flex-1 bg-black/40 justify-end"
+          onPress={() => setShowPrayerPanel(false)}
+        >
+          <Pressable
+            className="bg-[#0c1a35] rounded-t-[32px] p-6 pb-12 border-t border-white/10"
+            onPress={(e) => e.stopPropagation()} // Prevent closing when tapping inside
+          >
+            {/* Handle bar */}
+            <View className="w-12 h-1.5 bg-white/20 rounded-full self-center mb-6" />
+
+            <View className="flex-row justify-between items-center mb-6">
+              <Text className="text-white text-xl font-bold">Today's Prayer Times</Text>
+              <TouchableOpacity onPress={() => setShowPrayerPanel(false)}>
+                <View className="bg-white/10 w-8 h-8 rounded-full items-center justify-center">
+                  <Text className="text-white font-bold">✕</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View className="space-y-4">
+              {([
+                { name: 'Fajr', time: prayerTimes.fajr, icon: '🌙' },
+                { name: 'Sunrise', time: prayerTimes.sunrise, icon: '🌅' },
+                { name: 'Dhuhr', time: prayerTimes.dhuhr, icon: '☀️' },
+                { name: 'Asr', time: prayerTimes.asr, icon: '🌤️' },
+                { name: 'Maghrib', time: prayerTimes.maghrib, icon: '🌇' },
+                { name: 'Isha', time: prayerTimes.isha, icon: '🌃' },
+              ] as const).map((prayer, i, arr) => {
+                const nowMs = displayNow.getTime();
+                const thisPrayerMs = prayer.time.getTime();
+                const nextPrayerMs = i < arr.length - 1 ? arr[i + 1].time.getTime() : Infinity;
+                const highlight = nowMs >= thisPrayerMs && nowMs < nextPrayerMs;
+                const isVeryFirstTime = i === 0 && nowMs < thisPrayerMs;
+                const shouldHighlight = highlight || isVeryFirstTime;
+
+                return (
+                  <View
+                    key={prayer.name}
+                    className={`flex-row justify-between items-center p-4 rounded-2xl ${shouldHighlight ? 'bg-white/15' : 'bg-white/5'
+                      } mb-3`}
+                  >
+                    <View className="flex-row items-center space-x-3">
+                      <Text className="text-xl mr-3">{prayer.icon}</Text>
+                      <Text className={`text-base ${shouldHighlight ? 'text-white font-bold' : 'text-white/60'}`}>
+                        {prayer.name}
+                      </Text>
+                    </View>
+                    <Text className={`text-base ${shouldHighlight ? 'text-white font-bold' : 'text-white/60'}`}>
+                      {formatTime12(prayer.time)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Bottom Buttons */}
       <View style={styles.bottomButtons}>
         <TouchableOpacity
           style={[
             styles.prayerTimesBtn,
             {
-              backgroundColor: isDaytimeNow ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.12)',
-              borderColor: isDaytimeNow ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)',
+              backgroundColor: showPrayerPanel
+                ? 'rgba(255,255,255,0.25)'
+                : isDaytimeNow ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.12)',
+              borderColor: showPrayerPanel
+                ? 'rgba(255,255,255,0.45)'
+                : isDaytimeNow ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)',
             },
-          ]}>
+          ]}
+          onPress={() => setShowPrayerPanel(!showPrayerPanel)}>
           <Text style={{ fontSize: 14 }}>{'🕌'}</Text>
           <Text style={[styles.btnText, { color: textColor }]}>Prayer Times</Text>
-          <Text style={[styles.btnArrow, { color: textColor }]}>^</Text>
+          <Text style={[styles.btnArrow, { color: textColor }]}>{showPrayerPanel ? 'v' : '^'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -632,6 +656,62 @@ export default function RamadanScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+// --- Smooth rolling digit animation ---
+const DIGIT_HEIGHT = 72; // matches countdownNumber lineHeight
+
+function AnimatedDigit({ digit, style }: { digit: string; style: any }) {
+  const translateY = useSharedValue(0);
+  const prevDigit = React.useRef(digit);
+  const [displayDigits, setDisplayDigits] = React.useState({ current: digit, previous: digit });
+
+  React.useEffect(() => {
+    if (digit !== prevDigit.current) {
+      setDisplayDigits({ current: digit, previous: prevDigit.current });
+      translateY.value = DIGIT_HEIGHT; // start from below
+      translateY.value = withTiming(0, {
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+      });
+      prevDigit.current = digit;
+    }
+  }, [digit]);
+
+  const currentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: 1,
+  }));
+
+  const previousStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value - DIGIT_HEIGHT }],
+    opacity: translateY.value / DIGIT_HEIGHT, // fade out as it slides up
+  }));
+
+  return (
+    <View style={{ height: DIGIT_HEIGHT, overflow: 'hidden', justifyContent: 'center' }}>
+      {/* Previous digit (slides up and fades out) */}
+      <Animated.Text style={[style, { position: 'absolute' }, previousStyle]}>
+        {displayDigits.previous}
+      </Animated.Text>
+      {/* Current digit (slides in from below) */}
+      <Animated.Text style={[style, currentStyle]}>
+        {displayDigits.current}
+      </Animated.Text>
+    </View>
+  );
+}
+
+function RollingText({ value, style }: { value: string; style: any }) {
+  // Split "04" into ["0", "4"] and animate each digit independently
+  const digits = value.split('');
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+      {digits.map((d, i) => (
+        <AnimatedDigit key={i} digit={d} style={style} />
+      ))}
     </View>
   );
 }

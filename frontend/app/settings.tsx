@@ -14,9 +14,9 @@ import {
   View,
 } from 'react-native';
 
-import { fetchRamadanTimetable } from '@/lib/aladhan-api';
+import { fetchRamadanTimetable, fetchDailyPrayerTimes } from '@/lib/aladhan-api';
 import { DIVISIONS, type District, type Division } from '@/lib/bangladesh-districts';
-import { saveSettings, type RamadanDayTime } from '@/lib/storage';
+import { saveSettings, saveDailyPrayerTimes, type RamadanDayTime } from '@/lib/storage';
 
 type Step = 'select' | 'loading' | 'confirm' | 'edit';
 type DistrictOption = { district: District; division: Division };
@@ -150,10 +150,29 @@ export default function SettingsScreen() {
     setStep('loading');
     setError(null);
     try {
-      const data = await fetchRamadanTimetable(selectedDistrict.lat, selectedDistrict.lng);
-      if (data.length === 0) throw new Error('No Ramadan days found. Please try again.');
-      setTimetable(data);
-      setEditedTimetable(data.map((d) => ({ ...d })));
+      // Fetch Ramadan timetable and daily prayer times in parallel
+      const [ramadanData, prayerData] = await Promise.all([
+        fetchRamadanTimetable(selectedDistrict.lat, selectedDistrict.lng),
+        fetchDailyPrayerTimes(selectedDistrict.lat, selectedDistrict.lng),
+      ]);
+      if (ramadanData.length === 0) throw new Error('No Ramadan days found. Please try again.');
+      setTimetable(ramadanData);
+      setEditedTimetable(ramadanData.map((d) => ({ ...d })));
+
+      // Cache daily prayer times for offline use
+      const todayStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Dhaka',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+      await saveDailyPrayerTimes({
+        date: todayStr,
+        lat: selectedDistrict.lat,
+        lng: selectedDistrict.lng,
+        ...prayerData,
+      });
+
       setStep('confirm');
     } catch (e: any) {
       setError(e.message ?? 'Failed to fetch prayer times. Check your connection.');
@@ -294,7 +313,7 @@ export default function SettingsScreen() {
                   <Text style={styles.fetchBtnText}>Fetching times...</Text>
                 </View>
               ) : (
-                <Text style={styles.fetchBtnText}>Search Ramadan 2026 Times</Text>
+                <Text style={styles.fetchBtnText}>Fetch Prayer & Ramadan Times</Text>
               )}
             </TouchableOpacity>
           )}

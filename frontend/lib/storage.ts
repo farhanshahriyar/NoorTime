@@ -96,3 +96,32 @@ export async function markFastingComplete(
   await AsyncStorage.setItem(FASTING_STREAK_KEY, JSON.stringify(updated));
   return { ...updated, alreadyMarked: false };
 }
+
+// --- Daily Prayer Times Cache ---
+const PRAYER_TIMES_CACHE_KEY = 'daily_prayer_times_cache_v1';
+
+export interface DailyPrayerTimesCache {
+  date: string;         // "YYYY-MM-DD" in Asia/Dhaka
+  lat: number;
+  lng: number;
+  fajr: string;         // "HH:MM" 24h
+  sunrise: string;
+  dhuhr: string;
+  asr: string;
+  maghrib: string;
+  isha: string;
+}
+
+export async function saveDailyPrayerTimes(cache: DailyPrayerTimesCache): Promise<void> {
+  await AsyncStorage.setItem(PRAYER_TIMES_CACHE_KEY, JSON.stringify(cache));
+}
+
+export async function loadDailyPrayerTimes(): Promise<DailyPrayerTimesCache | null> {
+  const raw = await AsyncStorage.getItem(PRAYER_TIMES_CACHE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as DailyPrayerTimesCache;
+  } catch {
+    return null;
+  }
+}
